@@ -4,7 +4,7 @@
   "description": "CLI to scaffold agency config, standards, and tooling into Shopify client repos",
   "repository": {
     "type": "git",
-    "url": "https://github.com/raheemdev/shopify-agency-cli"
+    "url": "git+https://github.com/raheemdev/shopify-agency-cli.git"
   },
   "author": "Raheem Dawar",
   "bin": {
