@@ -1,0 +1,275 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+VERSION="1.0.0"
+
+# ---------------------------------------------------------------------------
+# Colors and formatting
+# ---------------------------------------------------------------------------
+RED='\033[0;31m'
+GREEN='\033[0;32m'
+YELLOW='\033[0;33m'
+BLUE='\033[0;34m'
+CYAN='\033[0;36m'
+BOLD='\033[1m'
+RESET='\033[0m'
+
+step_num=0
+
+step() {
+  step_num=$((step_num + 1))
+  echo -e "\n${BLUE}${BOLD}[Step ${step_num}]${RESET} ${CYAN}$1${RESET}"
+}
+
+success() {
+  echo -e "  ${GREEN}✔${RESET} $1"
+}
+
+warn() {
+  echo -e "  ${YELLOW}⚠${RESET} $1"
+}
+
+error() {
+  echo -e "\n  ${RED}✖ ERROR:${RESET} $1" >&2
+  exit 1
+}
+
+# ---------------------------------------------------------------------------
+# Resolve the package root (follows symlinks from npm link / npm i -g)
+# ---------------------------------------------------------------------------
+resolve_root() {
+  local source="${BASH_SOURCE[0]}"
+  while [[ -L "$source" ]]; do
+    local dir="$(cd "$(dirname "$source")" && pwd)"
+    source="$(readlink "$source")"
+    [[ "$source" != /* ]] && source="$dir/$source"
+  done
+  echo "$(cd "$(dirname "$source")/.." && pwd)"
+}
+
+PKG_ROOT="$(resolve_root)"
+TEMPLATE_DIR="${PKG_ROOT}/template"
+
+# ---------------------------------------------------------------------------
+# Commands
+# ---------------------------------------------------------------------------
+
+show_help() {
+  echo ""
+  echo -e "${BOLD}shopify-agency${RESET} v${VERSION}"
+  echo ""
+  echo -e "${BOLD}USAGE${RESET}"
+  echo "  shopify-agency init <domain> <myshopify-url> <github-repo-url> [target-dir] [--force]"
+  echo "  shopify-agency help"
+  echo "  shopify-agency --version"
+  echo ""
+  echo -e "${BOLD}COMMANDS${RESET}"
+  echo "  init       Generate agency config into a client repo"
+  echo "  help       Show this help message"
+  echo ""
+  echo -e "${BOLD}ARGUMENTS${RESET}"
+  echo "  domain           Client domain (e.g., acme-store.com)"
+  echo "  myshopify-url    Shopify admin URL (e.g., acme-store.myshopify.com)"
+  echo "  github-repo-url  GitHub repo URL (e.g., https://github.com/acme/theme)"
+  echo "  target-dir       Where to generate files (default: current directory)"
+  echo ""
+  echo -e "${BOLD}FLAGS${RESET}"
+  echo "  --force    Overwrite existing files (default: skip them)"
+  echo ""
+  echo -e "${BOLD}EXAMPLES${RESET}"
+  echo "  # cd into client repo, then init"
+  echo "  cd ~/repos/acme-theme"
+  echo "  shopify-agency init acme.com acme.myshopify.com https://github.com/acme/theme"
+  echo ""
+  echo "  # Or specify target directory"
+  echo "  shopify-agency init acme.com acme.myshopify.com https://github.com/acme/theme ~/repos/acme-theme"
+  echo ""
+  echo "  # Overwrite existing files"
+  echo "  shopify-agency init acme.com acme.myshopify.com https://github.com/acme/theme --force"
+  echo ""
+}
+
+cmd_init() {
+  local force=false
+  local positional=()
+
+  for arg in "$@"; do
+    case "$arg" in
+      --force) force=true ;;
+      *) positional+=("$arg") ;;
+    esac
+  done
+
+  if [[ ${#positional[@]} -lt 3 || ${#positional[@]} -gt 4 ]]; then
+    error "Expected 3-4 arguments after 'init'.
+
+Usage:
+  shopify-agency init <domain> <myshopify-url> <github-repo-url> [target-dir] [--force]
+
+Examples:
+  shopify-agency init acme.com acme.myshopify.com https://github.com/acme/theme
+  shopify-agency init acme.com acme.myshopify.com https://github.com/acme/theme ~/repos/acme-theme --force"
+  fi
+
+  local client_domain="${positional[0]}"
+  local myshopify_url="${positional[1]}"
+  local github_repo_url="${positional[2]}"
+  local target_dir="${positional[3]:-.}"
+
+  # --- Step 1: Validate ---
+  step "Validating arguments"
+
+  if [[ "${client_domain}" != *.* ]]; then
+    error "Domain '${client_domain}' is invalid — must contain a dot (e.g., acme-store.com)"
+  fi
+  success "Domain is valid"
+
+  if [[ "${myshopify_url}" != *.myshopify.com ]]; then
+    error "Myshopify URL '${myshopify_url}' must end with .myshopify.com"
+  fi
+  success "Myshopify URL is valid"
+
+  if [[ "${github_repo_url}" != https://github.com/* ]]; then
+    error "GitHub URL '${github_repo_url}' must start with https://github.com/"
+  fi
+  success "GitHub URL is valid"
+
+  target_dir="$(cd "${target_dir}" 2>/dev/null && pwd)" || error "Target directory '${positional[3]:-.}' does not exist."
+  success "Target directory exists: ${target_dir}"
+
+  echo -e "    Domain:     ${BOLD}${client_domain}${RESET}"
+  echo -e "    Myshopify:  ${BOLD}${myshopify_url}${RESET}"
+  echo -e "    GitHub:     ${BOLD}${github_repo_url}${RESET}"
+  echo -e "    Target:     ${BOLD}${target_dir}${RESET}"
+  if $force; then
+    echo -e "    Mode:       ${YELLOW}${BOLD}--force (will overwrite existing files)${RESET}"
+  fi
+
+  # --- Step 2: Derive slug ---
+  step "Deriving slug from domain"
+
+  local client_slug
+  client_slug=$(echo "${client_domain}" | sed 's/\.[^.]*$//' | tr '[:upper:]' '[:lower:]')
+  success "Slug: ${BOLD}${client_slug}${RESET}"
+
+  # --- Step 3: Process templates ---
+  step "Processing template files"
+
+  if [[ ! -d "${TEMPLATE_DIR}" ]]; then
+    error "Template directory not found at ${TEMPLATE_DIR}"
+  fi
+
+  local build_dir
+  build_dir=$(mktemp -d)
+  local generated_date
+  generated_date="$(date +%Y-%m-%d)"
+
+  cp -a "${TEMPLATE_DIR}/." "${build_dir}/"
+
+  # Remove files that should not be copied into target repos
+  rm -f "${build_dir}/README.md.tpl" "${build_dir}/README.md"
+
+  local tpl_count=0
+  while IFS= read -r -d '' tpl_file; do
+    sed -i '' \
+      -e "s|%%CLIENT_DOMAIN%%|${client_domain}|g" \
+      -e "s|%%MYSHOPIFY_URL%%|${myshopify_url}|g" \
+      -e "s|%%GITHUB_REPO_URL%%|${github_repo_url}|g" \
+      -e "s|%%CLIENT_SLUG%%|${client_slug}|g" \
+      -e "s|%%GENERATED_DATE%%|${generated_date}|g" \
+      "${tpl_file}"
+
+    mv "${tpl_file}" "${tpl_file%.tpl}"
+    tpl_count=$((tpl_count + 1))
+  done < <(find "${build_dir}" -name '*.tpl' -type f -print0)
+
+  success "Processed ${tpl_count} template file(s)"
+
+  # --- Step 4: Copy files ---
+  step "Copying files into ${target_dir}"
+
+  local added=0
+  local skipped=0
+  local overwritten=0
+
+  while IFS= read -r -d '' src_file; do
+    local rel_path="${src_file#${build_dir}/}"
+    local dest_file="${target_dir}/${rel_path}"
+    local dest_dir
+    dest_dir=$(dirname "${dest_file}")
+
+    mkdir -p "${dest_dir}"
+
+    if [[ -f "${dest_file}" ]]; then
+      if $force; then
+        cp "${src_file}" "${dest_file}"
+        warn "Overwritten: ${rel_path}"
+        overwritten=$((overwritten + 1))
+      else
+        skipped=$((skipped + 1))
+      fi
+    else
+      cp "${src_file}" "${dest_file}"
+      success "Added: ${rel_path}"
+      added=$((added + 1))
+    fi
+  done < <(find "${build_dir}" -type f -print0)
+
+  # Set executable permissions
+  find "${target_dir}/.claude/hooks" -name '*.sh' -type f -exec chmod +x {} \; 2>/dev/null || true
+  find "${target_dir}/tools/scripts" -name '*.sh' -type f -exec chmod +x {} \; 2>/dev/null || true
+  [[ -f "${target_dir}/setup.sh" ]] && chmod +x "${target_dir}/setup.sh"
+
+  # Clean up
+  rm -rf "${build_dir}"
+
+  # --- Summary ---
+  echo ""
+  echo -e "${GREEN}${BOLD}════════════════════════════════════════════════════════════${RESET}"
+  echo -e "${GREEN}${BOLD}  Done!${RESET}"
+  echo -e "${GREEN}${BOLD}════════════════════════════════════════════════════════════${RESET}"
+  echo ""
+  echo -e "  ${BOLD}Target:${RESET}      ${target_dir}"
+  echo -e "  ${BOLD}Added:${RESET}       ${added} file(s)"
+  if [[ $skipped -gt 0 ]]; then
+    echo -e "  ${BOLD}Skipped:${RESET}     ${skipped} file(s) (already exist — use ${BOLD}--force${RESET} to overwrite)"
+  fi
+  if [[ $overwritten -gt 0 ]]; then
+    echo -e "  ${BOLD}Overwritten:${RESET} ${overwritten} file(s)"
+  fi
+  echo ""
+  echo -e "${YELLOW}${BOLD}  Next steps:${RESET}"
+  echo "    1. Run setup (pull existing theme or start fresh with Dawn):"
+  echo -e "       ${CYAN}cd ${target_dir} && ./setup.sh${RESET}"
+  echo "    2. Fill in Client Config in CLAUDE.md"
+  echo "    3. Commit and push:"
+  echo -e "       ${CYAN}git add -A && git commit -m 'feat: add agency config' && git push${RESET}"
+  echo ""
+}
+
+# ---------------------------------------------------------------------------
+# Router
+# ---------------------------------------------------------------------------
+
+if [[ $# -eq 0 ]]; then
+  show_help
+  exit 0
+fi
+
+case "$1" in
+  init)
+    shift
+    cmd_init "$@"
+    ;;
+  help|--help|-h)
+    show_help
+    ;;
+  --version|-v)
+    echo "shopify-agency v${VERSION}"
+    ;;
+  *)
+    error "Unknown command: $1
+
+Run 'shopify-agency help' for usage."
+    ;;
+esac

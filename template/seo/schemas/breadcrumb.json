@@ -1,0 +1,29 @@
+{
+  "@context": "https://schema.org",
+  "@type": "BreadcrumbList",
+  "itemListElement": [
+    {
+      "@type": "ListItem",
+      "position": 1,
+      "name": "Home",
+      "item": "{{shop_url}}"
+    },
+    {
+      "@type": "ListItem",
+      "position": 2,
+      "name": "{{category_name}}",
+      "item": "{{category_url}}"
+    },
+    {
+      "@type": "ListItem",
+      "position": 3,
+      "name": "{{subcategory_name}}",
+      "item": "{{subcategory_url}}"
+    },
+    {
+      "@type": "ListItem",
+      "position": 4,
+      "name": "{{page_name}}"
+    }
+  ]
+}

@@ -1,0 +1,3 @@
+output/*.zip
+_build/
+.DS_Store
