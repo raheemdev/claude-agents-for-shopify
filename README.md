@@ -1,5 +1,7 @@
 # shopify-agency-cli
 
+[![license MIT](https://img.shields.io/npm/l/shopify-agency-cli)](https://github.com/raheemdev/claude-agents-for-shopify/blob/main/LICENSE) [![npm](https://img.shields.io/npm/v/shopify-agency-cli)](https://www.npmjs.com/package/shopify-agency-cli)
+
 CLI tool to generate agency config for Shopify client repos. Scaffolds project standards, skills, hooks, documentation, and tooling into any Shopify theme repository.
 
 ## Install
