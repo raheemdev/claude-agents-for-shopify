@@ -1,6 +1,6 @@
 {
   "name": "shopify-agency-cli",
-  "version": "1.0.1",
+  "version": "1.0.2",
   "description": "CLI to scaffold agency config, standards, and tooling into Shopify client repos",
   "repository": {
     "type": "git",
